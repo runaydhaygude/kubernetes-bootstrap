@@ -20,6 +20,23 @@ export KUBECONFIG=$PWD/cluster/kubecfg-eks
 #update the context
 aws eks --region $AWS_DEFAULT_REGION update-kubeconfig --name $NAME
 
+
+# Install Ingress
+###################
+# Install Ingress #
+###################
+
+kubectl apply \
+    -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/1cd17cd12c98563407ad03812aebac46ca4442f2/deploy/mandatory.yaml
+
+kubectl apply \
+    -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/1cd17cd12c98563407ad03812aebac46ca4442f2/deploy/provider/aws/service-l4.yaml
+
+kubectl apply \
+    -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/1cd17cd12c98563407ad03812aebac46ca4442f2/deploy/provider/aws/patch-configmap-l4.yaml
+
+
+
 # Setup metrics server
 kubectl create namespace metrics
 
@@ -64,3 +81,21 @@ helm install cluster-autoscaler \
 kubectl -n kube-system get deployment -o name \
     | grep "cluster-autoscaler" \
     | xargs -I{} kubectl -n kube-system rollout status {}
+
+
+
+# LB Ip
+##################
+# Get Cluster IP #
+##################
+
+LB_HOST=$(kubectl -n ingress-nginx \
+    get svc ingress-nginx \
+    -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
+
+export LB_IP="$(dig +short $LB_HOST \
+    | tail -n 1)"
+
+echo $LB_IP
+export LB_IP=$LB_IP
+export LB_URL="http://$LB_IP"
