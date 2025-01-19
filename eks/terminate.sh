@@ -10,7 +10,7 @@ echo $IAM_ROLE
 
 aws iam delete-role-policy \
 --role-name $IAM_ROLE \
---policy-name $NAME-AutoScaling
+--policy-name $NAME-policy
 
 
 # Delete the EKS cluster
@@ -25,5 +25,8 @@ SG_NAME=$(aws ec2 describe-security-groups \
 
 echo $SG_NAME
 
-aws ec2 delete-security-group \
-    --group-id $SG_NAME
+if [ -n "$SG_NAME" ]; then
+  aws ec2 delete-security-group --group-id $SG_NAME
+else
+  echo "SG_NAME is null or empty. Exiting."
+fi

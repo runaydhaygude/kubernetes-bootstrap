@@ -1,9 +1,29 @@
 #!/bin/bash
 
-# Run pre-setup.sh before this script
+echo "Enter AWS_ACCESS_KEY_ID : "
+read AWS_ACCESS_KEY_ID
+
+echo "Enter AWS_SECRET_ACCESS_KEY : "
+read AWS_SECRET_ACCESS_KEY
+
+
+# Set environment variables
+export NAME=devops25
+export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+export AWS_DEFAULT_REGION=ap-south-1
+export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+
+
+# Print confirmation
+echo "Environment variables have been set:"
+echo "NAME=$NAME"
+echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"
+echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+echo "AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION"
+echo "AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID"
 
 # Create a new cluster
-
 eksctl create cluster \
 -n $NAME \
 -r $AWS_DEFAULT_REGION \
@@ -21,32 +41,47 @@ export KUBECONFIG=$PWD/cluster/kubecfg-eks
 aws eks --region $AWS_DEFAULT_REGION update-kubeconfig --name $NAME
 
 
-# Install Ingress
-###################
-# Install Ingress #
-###################
+# To manage lifcyle of volume: Container Storage Interface (CSI) acts as a plugin layer to surface external storage into Kubernetes.
+## Associate the IAM OIDC provider with the cluster
+eksctl utils associate-iam-oidc-provider --region $AWS_DEFAULT_REGION --cluster $NAME --approve
 
-kubectl apply \
-    -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/1cd17cd12c98563407ad03812aebac46ca4442f2/deploy/mandatory.yaml
+## Create IAM Role for EBS CSI Driver
+eksctl create iamserviceaccount \
+  --region $AWS_DEFAULT_REGION \
+  --name ebs-csi-controller-sa \
+  --namespace kube-system \
+  --cluster $NAME \
+  --attach-policy-arn arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy \
+  --approve \
+  --role-only \
+  --role-name AmazonEKS_EBS_CSI_DriverRole
 
-kubectl apply \
-    -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/1cd17cd12c98563407ad03812aebac46ca4442f2/deploy/provider/aws/service-l4.yaml
+## Install EBS CSI Driver as an EKS add-on
+eksctl create addon \
+  --name aws-ebs-csi-driver \
+  --cluster $NAME \
+  --service-account-role-arn arn:aws:iam::$AWS_ACCOUNT_ID:role/AmazonEKS_EBS_CSI_DriverRole \
+  --force
 
-kubectl apply \
-    -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/1cd17cd12c98563407ad03812aebac46ca4442f2/deploy/provider/aws/patch-configmap-l4.yaml
 
+
+# Install Ingress 
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
+
+kubectl create namespace ingress-nginx
+helm install ingress-nginx ingress-nginx/ingress-nginx --namespace ingress-nginx
 
 
 # Setup metrics server
-kubectl create namespace metrics
-
 helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
 
+kubectl create namespace metrics
 helm upgrade --install metrics-server metrics-server/metrics-server -n metrics
 
-kubectl -n metrics \
-rollout status \
-deployment metrics-server
+# kubectl -n metrics \
+#     rollout status \
+#     deployment metrics-server
 
 
 # Retrieve the worker node's role name
@@ -61,8 +96,8 @@ echo $IAM_ROLE
 # Put a role policy for the given IAM role
 aws iam put-role-policy \
     --role-name $IAM_ROLE \
-    --policy-name $NAME-AutoScaling \
-    --policy-document file://scaling/eks-autoscaling-policy.json
+    --policy-name $NAME-policy \
+    --policy-document file://scaling/eks-policy.json
 
 
 
@@ -85,12 +120,10 @@ kubectl -n kube-system get deployment -o name \
 
 
 # LB Ip
-##################
-# Get Cluster IP #
-##################
+aws eks --region $AWS_DEFAULT_REGION update-kubeconfig --name $NAME
 
 LB_HOST=$(kubectl -n ingress-nginx \
-    get svc ingress-nginx \
+    get svc ingress-nginx-controller \
     -o jsonpath="{.status.loadBalancer.ingress[0].hostname}")
 
 export LB_IP="$(dig +short $LB_HOST \
@@ -99,3 +132,41 @@ export LB_IP="$(dig +short $LB_HOST \
 echo $LB_IP
 export LB_IP=$LB_IP
 export LB_URL="http://$LB_IP"
+
+
+
+# Setup Prometheus
+
+## Prometheus Address and Alert Manager Address
+export PROM_ADDR=mon.$LB_IP.nip.io
+echo $PROM_ADDR
+export AM_ADDR=alertmanager.$LB_IP.nip.io
+echp $AM_ADDR
+export G_ADDR=grafana.$LB_IP.nip.io
+echo $G_ADDR
+
+
+# Create custom storage class
+kubectl apply -f - <<EOF
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: custom-gp3
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+parameters:
+  type: gp3
+EOF
+
+
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+
+helm install prometheus \
+    prometheus-community/kube-prometheus-stack \
+    --set prometheus.ingress.hosts\[0\]="$PROM_ADDR" \
+    --set alertmanager.ingress.hosts\[0\]="$AM_ADDR" \
+    --set grafana.ingress.hosts\[0\]="$G_ADDR" \
+    -f monitoring/prom-values-bare.yaml \
+    --namespace metrics
