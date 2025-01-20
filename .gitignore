@@ -1,0 +1,3 @@
+eks/cluster/kubecfg-eks
+test.sh
+aws-credentials.json  

@@ -1,16 +1,24 @@
 #!/bin/bash
 
-echo "Enter AWS_ACCESS_KEY_ID : "
-read AWS_ACCESS_KEY_ID
-
-echo "Enter AWS_SECRET_ACCESS_KEY : "
-read AWS_SECRET_ACCESS_KEY
-
-
 # Set environment variables
-export NAME=devops25
-export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
-export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+if [ -f "../aws-credentials.json" ]; then
+    export AWS_ACCESS_KEY_ID=$(jq -r '.AWS_ACCESS_KEY_ID' ../aws-credentials.json)
+    export AWS_SECRET_ACCESS_KEY=$(jq -r '.AWS_SECRET_ACCESS_KEY' ../aws-credentials.json)
+fi
+
+if [ -z "${AWS_ACCESS_KEY_ID}" ]; then
+    echo "Enter AWS_ACCESS_KEY_ID : "
+    read AWS_ACCESS_KEY_ID
+    export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+fi
+
+if [ -z "${AWS_SECRET_ACCESS_KEY}" ]; then
+    echo "Enter AWS_SECRET_ACCESS_KEY : "
+    read AWS_SECRET_ACCESS_KEY
+    export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+fi
+
+export NAME=runay
 export AWS_DEFAULT_REGION=ap-south-1
 export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 
@@ -23,22 +31,63 @@ echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
 echo "AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION"
 echo "AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID"
 
-# Create a new cluster
-eksctl create cluster \
--n $NAME \
--r $AWS_DEFAULT_REGION \
---kubeconfig cluster/kubecfg-eks \
---node-type t2.small \
---nodes-max 3 \
---nodes-min 1 \
---asg-access \
---managed
+# Create a new cluster if it doesn't exist
 
+if aws eks describe-cluster --name $NAME >/dev/null 2>&1; then
+    echo "$NAME cluster exists"
+else
+    eksctl create cluster \
+    -n $NAME \
+    -r $AWS_DEFAULT_REGION \
+    --kubeconfig cluster/kubecfg-eks \
+    --node-type t2.small \
+    --nodes-max 3 \
+    --nodes-min 1 \
+    --asg-access \
+    --managed \
+    --spot
 
-export KUBECONFIG=$PWD/cluster/kubecfg-eks
+    export KUBECONFIG=$PWD/cluster/kubecfg-eks
+fi
 
 #update the context
 aws eks --region $AWS_DEFAULT_REGION update-kubeconfig --name $NAME
+
+# Setup cluster autoscaler
+
+if ! helm repo list | grep -q 'autoscaler'; then
+    helm repo add autoscaler https://kubernetes.github.io/autoscaler
+fi
+
+helm install cluster-autoscaler \
+    autoscaler/cluster-autoscaler \
+    --namespace kube-system \
+    --set autoDiscovery.clusterName=$NAME \
+    --set awsRegion=$AWS_DEFAULT_REGION \
+    --set sslCertPath=/etc/kubernetes/pki/ca.crt \
+    --set rbac.create=true
+
+# kubectl -n kube-system get deployment -o name \
+#     | grep "cluster-autoscaler" \
+#     | xargs -I{} kubectl -n kube-system rollout status {}
+
+# Retrieve the worker node's role name
+export IAM_ROLE=$(aws iam list-roles \
+    | jq -r ".Roles[] \
+    | select(.RoleName \
+    | startswith(\"eksctl-$NAME-nodegroup\")) \
+    .RoleName")
+echo $IAM_ROLE
+
+# Put a role policy for the given IAM role
+export EKS_POLICY_PATH=$(realpath scaling/eks-policy.json)
+echo $POLICY_PATH
+
+aws iam put-role-policy \
+    --role-name $IAM_ROLE \
+    --policy-name $NAME-policy \
+    --policy-document file:///"$EKS_POLICY_PATH"
+
 
 
 # To manage lifcyle of volume: Container Storage Interface (CSI) acts as a plugin layer to surface external storage into Kubernetes.
@@ -60,63 +109,39 @@ eksctl create iamserviceaccount \
 eksctl create addon \
   --name aws-ebs-csi-driver \
   --cluster $NAME \
-  --service-account-role-arn arn:aws:iam::$AWS_ACCOUNT_ID:role/AmazonEKS_EBS_CSI_DriverRole \
+  --service-account-role-arn arn:aws:iam::"$AWS_ACCOUNT_ID":role/AmazonEKS_EBS_CSI_DriverRole \
   --force
 
 
-
-# Install Ingress 
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-helm repo update
-
-kubectl create namespace ingress-nginx
-helm install ingress-nginx ingress-nginx/ingress-nginx --namespace ingress-nginx
-
-
 # Setup metrics server
-helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+if ! helm repo list | grep -q 'metrics-server'; then
+    helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+fi
 
 kubectl create namespace metrics
-helm upgrade --install metrics-server metrics-server/metrics-server -n metrics
+helm install metrics-server metrics-server/metrics-server -n metrics
 
 # kubectl -n metrics \
 #     rollout status \
 #     deployment metrics-server
 
 
-# Retrieve the worker node's role name
-IAM_ROLE=$(aws iam list-roles \
-    | jq -r ".Roles[] \
-    | select(.RoleName \
-    | startswith(\"eksctl-$NAME-nodegroup\")) \
-    .RoleName")
-echo $IAM_ROLE
+# Install Ingress 
+if ! helm repo list | grep -q 'ingress-nginx'; then
+    helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+    helm repo update
+fi
 
+kubectl create namespace ingress-nginx
+helm install ingress-nginx ingress-nginx/ingress-nginx --namespace ingress-nginx
 
-# Put a role policy for the given IAM role
-aws iam put-role-policy \
-    --role-name $IAM_ROLE \
-    --policy-name $NAME-policy \
-    --policy-document file://scaling/eks-policy.json
+## Wait until the ingress-nginx controller pods are ready
+echo "Waiting for ingress-nginx controller to be ready..."
+kubectl wait --namespace ingress-nginx \
+  --for=condition=Available \
+  --timeout=300s deployment/ingress-nginx-controller
 
-
-
-# Setup cluster autoscaler
-
-helm repo add autoscaler https://kubernetes.github.io/autoscaler
-
-helm install cluster-autoscaler \
-    autoscaler/cluster-autoscaler \
-    --namespace kube-system \
-    --set autoDiscovery.clusterName=$NAME \
-    --set awsRegion=$AWS_DEFAULT_REGION \
-    --set sslCertPath=/etc/kubernetes/pki/ca.crt \
-    --set rbac.create=true
-
-kubectl -n kube-system get deployment -o name \
-    | grep "cluster-autoscaler" \
-    | xargs -I{} kubectl -n kube-system rollout status {}
-
+echo "Ingress controller is ready."
 
 
 # LB Ip
@@ -129,7 +154,7 @@ LB_HOST=$(kubectl -n ingress-nginx \
 export LB_IP="$(dig +short $LB_HOST \
     | tail -n 1)"
 
-echo $LB_IP
+echo "LB_IP=$LB_IP"
 export LB_IP=$LB_IP
 export LB_URL="http://$LB_IP"
 
@@ -141,7 +166,7 @@ export LB_URL="http://$LB_IP"
 export PROM_ADDR=mon.$LB_IP.nip.io
 echo $PROM_ADDR
 export AM_ADDR=alertmanager.$LB_IP.nip.io
-echp $AM_ADDR
+echo $AM_ADDR
 export G_ADDR=grafana.$LB_IP.nip.io
 echo $G_ADDR
 
@@ -159,9 +184,10 @@ parameters:
   type: gp3
 EOF
 
-
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
+if ! helm repo list | grep -q 'prometheus-community'; then
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+    helm repo update
+fi
 
 helm install prometheus \
     prometheus-community/kube-prometheus-stack \
@@ -170,3 +196,9 @@ helm install prometheus \
     --set grafana.ingress.hosts\[0\]="$G_ADDR" \
     -f monitoring/prom-values-bare.yaml \
     --namespace metrics
+
+
+
+
+# Install the application
+kubectl apply -f application.yaml

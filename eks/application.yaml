@@ -11,10 +11,10 @@ metadata:
   name: api
   namespace: staging
   annotations:
-    kubernetes.io/ingress.class: "nginx"
     ingress.kubernetes.io/ssl-redirect: "false"
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
+  ingressClassName: nginx
   rules:
   - http:
       paths:
@@ -121,6 +121,7 @@ spec:
   - metadata:
       name: mongo-data
     spec:
+      storageClassName: custom-gp3
       accessModes:
       - ReadWriteOnce
       resources:
@@ -153,8 +154,8 @@ spec:
     apiVersion: apps/v1
     kind: StatefulSet
     name: db
-  minReplicas: 3
-  maxReplicas: 5
+  minReplicas: 1
+  maxReplicas: 3
   metrics:
   - type: Resource
     resource:
@@ -233,8 +234,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: api
-  minReplicas: 15
-  maxReplicas: 30
+  minReplicas: 3
+  maxReplicas: 5
   metrics:
   - type: Resource
     resource:

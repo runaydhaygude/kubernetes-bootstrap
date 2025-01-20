@@ -1,0 +1,99 @@
+prometheus:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    servicePort: 9090
+    serviceName: prometheus-kube-prometheus-prometheus
+    hosts:
+      - ""
+    paths:
+      - /
+    pathType: Prefix
+    annotations:
+      ingress.kubernetes.io/ssl-redirect: "false"
+      nginx.ingress.kubernetes.io/ssl-redirect: "false"
+  resources:
+    limits:
+      cpu: 100m
+      memory: 1000Mi
+    requests:
+      cpu: 10m
+      memory: 500Mi
+  prometheusSpec:
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: custom-gp3
+          accessModes: 
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 10Gi
+alertmanager:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    servicePort: 9093
+    serviceName: prometheus-kube-prometheus-alertmanager
+    hosts:
+      - ""
+    paths:
+      - /
+    pathType: Prefix
+    annotations:
+      ingress.kubernetes.io/ssl-redirect: "false"
+      nginx.ingress.kubernetes.io/ssl-redirect: "false"
+  resources:
+    limits:
+      cpu: 10m
+      memory: 20Mi
+    requests:
+      cpu: 5m
+      memory: 10Mi
+  alertmanagerSpec:
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: custom-gp3
+          accessModes: 
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 10Gi
+kubeStateMetrics:
+  resources:
+    limits:
+      cpu: 10m
+      memory: 50Mi
+    requests:
+      cpu: 5m
+      memory: 25Mi
+nodeExporter:
+  resources:
+    limits:
+      cpu: 10m
+      memory: 20Mi
+    requests:
+      cpu: 5m
+      memory: 10Mi
+pushgateway:
+  resources:
+    limits:
+      cpu: 10m
+      memory: 20Mi
+    requests:
+      cpu: 5m
+      memory: 10Mi
+
+grafana:
+  adminPassword: "admin"
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    servicePort: 80
+    serviceName: prometheus-grafana
+    hosts:
+      - ""
+    paths:
+      - /
+    pathType: Prefix
