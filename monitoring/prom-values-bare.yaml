@@ -29,6 +29,7 @@ prometheus:
           resources:
             requests:
               storage: 10Gi
+
 alertmanager:
   ingress:
     enabled: true
@@ -68,6 +69,7 @@ kubeStateMetrics:
     requests:
       cpu: 5m
       memory: 25Mi
+
 nodeExporter:
   resources:
     limits:
@@ -76,6 +78,7 @@ nodeExporter:
     requests:
       cpu: 5m
       memory: 10Mi
+
 pushgateway:
   resources:
     limits:

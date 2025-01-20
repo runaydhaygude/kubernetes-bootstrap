@@ -197,8 +197,16 @@ helm install prometheus \
     -f monitoring/prom-values-bare.yaml \
     --namespace metrics
 
+helm upgrade prometheus \
+    prometheus-community/kube-prometheus-stack \
+    --set prometheus.ingress.hosts\[0\]="$PROM_ADDR" \
+    --set alertmanager.ingress.hosts\[0\]="$AM_ADDR" \
+    --set grafana.ingress.hosts\[0\]="$G_ADDR" \
+    -f monitoring/prom-values-bare.yaml \
+    --namespace metrics
 
-
+## prometheus rules
+kubectl apply -f ../monitoring/prometheus-rule.yaml
 
 # Install the application
 kubectl apply -f application.yaml
