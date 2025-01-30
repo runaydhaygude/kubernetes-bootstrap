@@ -1,0 +1,126 @@
+prometheus:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    servicePort: 9090
+    serviceName: prometheus-kube-prometheus-prometheus
+    hosts:
+      - ""
+    paths:
+      - /
+    pathType: Prefix
+    annotations:
+      ingress.kubernetes.io/ssl-redirect: "false"
+      nginx.ingress.kubernetes.io/ssl-redirect: "false"
+  resources:
+    limits:
+      cpu: 100m
+      memory: 1000Mi
+    requests:
+      cpu: 10m
+      memory: 500Mi
+  prometheusSpec:
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: hostpath
+          accessModes:
+            - ReadWriteMany
+          resources:
+            requests:
+              storage: 10Gi
+
+additionalPrometheusAlertingRulesMap:
+  rule-name:
+    groups:
+     - name: nodes
+       rules:
+       - alert: TooManyNodes
+         expr: count(kube_node_info) > 3
+         for: 15m
+         labels:
+           severity: notify
+         annotations:
+           summary: Cluster increased
+           description: The number of the nodes in the cluster increased
+       - alert: TooFewNodes
+         expr: count(kube_node_info) < 2
+         for: 15m
+         labels:
+           severity: notify
+         annotations:
+           summary: Cluster decreased
+           description: The number of the nodes in the cluster decreased
+
+alertmanager:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    servicePort: 9093
+    serviceName: prometheus-kube-prometheus-alertmanager
+    hosts:
+      - ""
+    paths:
+      - /
+    pathType: Prefix
+    annotations:
+      ingress.kubernetes.io/ssl-redirect: "false"
+      nginx.ingress.kubernetes.io/ssl-redirect: "false"
+  resources:
+    limits:
+      cpu: 10m
+      memory: 20Mi
+    requests:
+      cpu: 5m
+      memory: 10Mi
+  alertmanagerSpec:
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: manual
+          accessModes:
+            - ReadWriteMany
+          resources:
+            requests:
+              storage: 10Gi
+          volumeName: local-pv
+
+kubeStateMetrics:
+  resources:
+    limits:
+      cpu: 10m
+      memory: 50Mi
+    requests:
+      cpu: 5m
+      memory: 25Mi
+
+nodeExporter:
+  resources:
+    limits:
+      cpu: 10m
+      memory: 20Mi
+    requests:
+      cpu: 5m
+      memory: 10Mi
+
+pushgateway:
+  resources:
+    limits:
+      cpu: 10m
+      memory: 20Mi
+    requests:
+      cpu: 5m
+      memory: 10Mi
+
+grafana:
+  adminPassword: "admin"
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    servicePort: 80
+    serviceName: prometheus-grafana
+    hosts:
+      - ""
+    paths:
+      - /
+    pathType: Prefix

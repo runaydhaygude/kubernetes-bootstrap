@@ -177,11 +177,9 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: custom-gp3
-provisioner: ebs.csi.aws.com
+provisioner: kubernetes.io/no-provisioner
 volumeBindingMode: WaitForFirstConsumer
 reclaimPolicy: Delete
-parameters:
-  type: gp3
 EOF
 
 if ! helm repo list | grep -q 'prometheus-community'; then
@@ -194,19 +192,19 @@ helm install prometheus \
     --set prometheus.ingress.hosts\[0\]="$PROM_ADDR" \
     --set alertmanager.ingress.hosts\[0\]="$AM_ADDR" \
     --set grafana.ingress.hosts\[0\]="$G_ADDR" \
-    -f monitoring/prom-values-bare.yaml \
+    -f ../monitoring/prometheus.yaml \
     --namespace metrics
 
-helm upgrade prometheus \
-    prometheus-community/kube-prometheus-stack \
-    --set prometheus.ingress.hosts\[0\]="$PROM_ADDR" \
-    --set alertmanager.ingress.hosts\[0\]="$AM_ADDR" \
-    --set grafana.ingress.hosts\[0\]="$G_ADDR" \
-    -f monitoring/prom-values-bare.yaml \
-    --namespace metrics
+# helm upgrade prometheus \
+#     prometheus-community/kube-prometheus-stack \
+#     --set prometheus.ingress.hosts\[0\]="$PROM_ADDR" \
+#     --set alertmanager.ingress.hosts\[0\]="$AM_ADDR" \
+#     --set grafana.ingress.hosts\[0\]="$G_ADDR" \
+#     -f ../monitoring/prometheus.yaml \
+#     --namespace metrics
 
 ## prometheus rules
-kubectl apply -f ../monitoring/prometheus-rule.yaml
+# kubectl apply -f ../monitoring/prometheus-rule.yaml
 
 # Install the application
 kubectl apply -f application.yaml

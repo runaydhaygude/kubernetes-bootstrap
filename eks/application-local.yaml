@@ -69,6 +69,7 @@ metadata:
   name: db
   namespace: staging
 spec:
+  replicas: 1
   serviceName: db
   selector:
     matchLabels:
@@ -93,10 +94,10 @@ spec:
           - containerPort: 27017
         resources:
           limits:
-            memory: "150Mi"
+            memory: "550Mi"
             cpu: 0.2
           requests:
-            memory: "100Mi"
+            memory: "500Mi"
             cpu: 0.1
         volumeMounts:
         - name: mongo-data
@@ -112,21 +113,22 @@ spec:
           value: db
         resources:
           limits:
-            memory: "100Mi"
+            memory: "550Mi"
             cpu: 0.2
           requests:
-            memory: "50Mi"
+            memory: "550Mi"
             cpu: 0.1
   volumeClaimTemplates:
   - metadata:
       name: mongo-data
     spec:
-      storageClassName: custom-gp3
+      storageClassName: manual
       accessModes:
-      - ReadWriteOnce
+        - ReadWriteMany  # RWX required for multiple Pods to use the same PV
       resources:
         requests:
-          storage: 2Gi
+          storage: 4Gi
+      volumeName: local-pv  # Bind this PVC to the manually created PV
 
 ---
 
@@ -142,33 +144,33 @@ spec:
   selector:
     app: db
 
----
+# ---
 
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: db
-  namespace: staging
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: StatefulSet
-    name: db
-  minReplicas: 1
-  maxReplicas: 3
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 80
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80
+# apiVersion: autoscaling/v2
+# kind: HorizontalPodAutoscaler
+# metadata:
+#   name: db
+#   namespace: staging
+# spec:
+#   scaleTargetRef:
+#     apiVersion: apps/v1
+#     kind: StatefulSet
+#     name: db
+#   minReplicas: 1
+#   maxReplicas: 3
+#   metrics:
+#   - type: Resource
+#     resource:
+#       name: cpu
+#       target:
+#         type: Utilization
+#         averageUtilization: 80
+#   - type: Resource
+#     resource:
+#       name: memory
+#       target:
+#         type: Utilization
+#         averageUtilization: 80
 
 ---
 
@@ -178,6 +180,7 @@ metadata:
   name: api
   namespace: staging
 spec:
+  replicas: 1
   selector:
     matchLabels:
       app: api
@@ -201,12 +204,13 @@ spec:
           httpGet:
             path: /demo/hello
             port: 8080
+          initialDelaySeconds: 30
         resources:
           limits:
-            memory: 1Gi
+            memory: 1.5Gi
             cpu: 0.1
           requests:
-            memory: 500Mi
+            memory: 1Gi
             cpu: 0.01
 
 ---
@@ -222,30 +226,34 @@ spec:
   selector:
     app: api
 
----
 
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: api
-  namespace: staging
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: api
-  minReplicas: 1
-  maxReplicas: 5
-  metrics:
-  - type: Resource
-    resource:
-      name: cpu
-      target:
-        type: Utilization
-        averageUtilization: 80
-  - type: Resource
-    resource:
-      name: memory
-      target:
-        type: Utilization
-        averageUtilization: 80
+
+
+
+# ---
+
+# apiVersion: autoscaling/v2
+# kind: HorizontalPodAutoscaler
+# metadata:
+#   name: api
+#   namespace: staging
+# spec:
+#   scaleTargetRef:
+#     apiVersion: apps/v1
+#     kind: Deployment
+#     name: api
+#   minReplicas: 1
+#   maxReplicas: 5
+#   metrics:
+#   - type: Resource
+#     resource:
+#       name: cpu
+#       target:
+#         type: Utilization
+#         averageUtilization: 80
+#   - type: Resource
+#     resource:
+#       name: memory
+#       target:
+#         type: Utilization
+#         averageUtilization: 80
