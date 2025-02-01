@@ -192,7 +192,7 @@ helm install prometheus \
     --set prometheus.ingress.hosts\[0\]="$PROM_ADDR" \
     --set alertmanager.ingress.hosts\[0\]="$AM_ADDR" \
     --set grafana.ingress.hosts\[0\]="$G_ADDR" \
-    -f ../monitoring/prometheus.yaml \
+    -f ../monitoring/prometheus-setup.yaml \
     --namespace metrics
 
 # helm upgrade prometheus \
@@ -200,7 +200,7 @@ helm install prometheus \
 #     --set prometheus.ingress.hosts\[0\]="$PROM_ADDR" \
 #     --set alertmanager.ingress.hosts\[0\]="$AM_ADDR" \
 #     --set grafana.ingress.hosts\[0\]="$G_ADDR" \
-#     -f ../monitoring/prometheus.yaml \
+#     -f ../monitoring/prometheus-setup.yaml \
 #     --namespace metrics
 
 ## prometheus rules
