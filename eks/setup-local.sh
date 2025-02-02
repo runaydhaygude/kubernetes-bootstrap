@@ -119,6 +119,9 @@ helm install prometheus \
 
 # helm upgrade prometheus \
 #     prometheus-community/kube-prometheus-stack \
+#     --set prometheus.ingress.hosts\[0\]="$PROM_ADDR" \
+#     --set alertmanager.ingress.hosts\[0\]="$AM_ADDR" \
+#     --set grafana.ingress.hosts\[0\]="$G_ADDR" \
 #     -f ../monitoring/prometheus-local.yaml \
 #     --namespace metrics
 

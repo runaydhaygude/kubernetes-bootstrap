@@ -45,7 +45,7 @@ additionalPrometheusRulesMap:
             description: The number of the nodes in the cluster increased
         - alert: TooFewNodes
           expr: count(kube_node_info) < 2
-          for: 15m
+          for: 1s
           labels:
             severity: notify
           annotations:
@@ -84,6 +84,27 @@ alertmanager:
             requests:
               storage: 10Gi
           volumeName: local-pv
+  config:
+    global: {}
+    route:
+      group_wait: 10s
+      group_interval: 5m
+      receiver: slack
+      repeat_interval: 3h
+      routes:
+      - receiver: slack
+        repeat_interval: 5d
+        match:
+          severity: notify
+          frequency: low
+    receivers:
+    - name: slack
+      slack_configs:
+       - api_url: "https://hooks.slack.com/services/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"
+         send_resolved: true
+         title: "Alert Title"  # "{{ .Annotations.summary }}"
+         text: "Alert Title" # "{{ .Annotations.description }}"
+         title_link: http://mon.localhost/alerts
 
 kubeStateMetrics:
   resources:
